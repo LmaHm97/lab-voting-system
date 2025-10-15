@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from src.models.voting import db, Week, Presentation, Vote
+from src.models.voting import db, Week, Presentation, Vote, Rating, Comment
 from sqlalchemy.exc import IntegrityError
 
 voting_bp = Blueprint('voting', __name__, url_prefix='/api')
@@ -146,4 +146,147 @@ def reset_week_votes(week_id):
     db.session.commit()
     
     return jsonify({'message': 'Votes reset for week'}), 200
+
+
+# ==================== RATING ENDPOINTS ====================
+
+# Add or update rating for a presentation
+@voting_bp.route('/presentations/<int:presentation_id>/rate', methods=['POST'])
+def rate_presentation(presentation_id):
+    data = request.json
+    user_identifier = data.get('user_identifier')
+    rating_value = data.get('rating')
+    
+    if not user_identifier or rating_value is None:
+        return jsonify({'error': 'user_identifier and rating are required'}), 400
+    
+    if not isinstance(rating_value, int) or rating_value < 1 or rating_value > 5:
+        return jsonify({'error': 'Rating must be an integer between 1 and 5'}), 400
+    
+    presentation = Presentation.query.get(presentation_id)
+    if not presentation:
+        return jsonify({'error': 'Presentation not found'}), 404
+    
+    # Check if user has already rated
+    existing_rating = Rating.query.filter_by(
+        presentation_id=presentation_id,
+        user_identifier=user_identifier
+    ).first()
+    
+    if existing_rating:
+        # Update existing rating
+        existing_rating.rating = rating_value
+    else:
+        # Add new rating
+        rating = Rating(
+            presentation_id=presentation_id,
+            user_identifier=user_identifier,
+            rating=rating_value
+        )
+        db.session.add(rating)
+    
+    db.session.commit()
+    
+    return jsonify(presentation.to_dict()), 200
+
+
+# Get user's rating for a presentation
+@voting_bp.route('/presentations/<int:presentation_id>/my-rating', methods=['POST'])
+def get_my_rating(presentation_id):
+    data = request.json
+    user_identifier = data.get('user_identifier')
+    
+    if not user_identifier:
+        return jsonify({'error': 'user_identifier is required'}), 400
+    
+    rating = Rating.query.filter_by(
+        presentation_id=presentation_id,
+        user_identifier=user_identifier
+    ).first()
+    
+    if rating:
+        return jsonify({'rating': rating.rating})
+    else:
+        return jsonify({'rating': None})
+
+
+# ==================== COMMENT ENDPOINTS ====================
+
+# Add a comment to a presentation
+@voting_bp.route('/presentations/<int:presentation_id>/comments', methods=['POST'])
+def add_comment(presentation_id):
+    data = request.json
+    user_identifier = data.get('user_identifier')
+    username = data.get('username', 'Anonymous')
+    comment_text = data.get('comment_text')
+    
+    if not user_identifier or not comment_text:
+        return jsonify({'error': 'user_identifier and comment_text are required'}), 400
+    
+    if len(comment_text.strip()) == 0:
+        return jsonify({'error': 'Comment cannot be empty'}), 400
+    
+    presentation = Presentation.query.get(presentation_id)
+    if not presentation:
+        return jsonify({'error': 'Presentation not found'}), 404
+    
+    comment = Comment(
+        presentation_id=presentation_id,
+        user_identifier=user_identifier,
+        username=username,
+        comment_text=comment_text.strip()
+    )
+    db.session.add(comment)
+    db.session.commit()
+    
+    return jsonify(comment.to_dict()), 201
+
+
+# Get all comments for a presentation
+@voting_bp.route('/presentations/<int:presentation_id>/comments', methods=['GET'])
+def get_comments(presentation_id):
+    presentation = Presentation.query.get(presentation_id)
+    if not presentation:
+        return jsonify({'error': 'Presentation not found'}), 404
+    
+    comments = Comment.query.filter_by(presentation_id=presentation_id).order_by(Comment.created_at.desc()).all()
+    return jsonify({'comments': [c.to_dict() for c in comments]})
+
+
+# Delete a comment (user can delete their own comments)
+@voting_bp.route('/comments/<int:comment_id>', methods=['DELETE'])
+def delete_comment(comment_id):
+    data = request.json
+    user_identifier = data.get('user_identifier')
+    
+    if not user_identifier:
+        return jsonify({'error': 'user_identifier is required'}), 400
+    
+    comment = Comment.query.get(comment_id)
+    if not comment:
+        return jsonify({'error': 'Comment not found'}), 404
+    
+    # Only allow user to delete their own comment
+    if comment.user_identifier != user_identifier:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    db.session.delete(comment)
+    db.session.commit()
+    
+    return jsonify({'message': 'Comment deleted'}), 200
+
+
+
+
+# Delete a week and all its presentations
+@voting_bp.route('/weeks/<week_id>', methods=['DELETE'])
+def delete_week(week_id):
+    week = Week.query.filter_by(week_id=week_id).first()
+    if not week:
+        return jsonify({'error': 'Week not found'}), 404
+    
+    db.session.delete(week)
+    db.session.commit()
+    
+    return jsonify({'message': 'Week deleted'}), 200
 
