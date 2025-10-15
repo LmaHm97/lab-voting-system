@@ -289,4 +289,3 @@ def delete_week(week_id):
     db.session.commit()
     
     return jsonify({'message': 'Week deleted'}), 200
-
