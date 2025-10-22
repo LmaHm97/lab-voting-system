@@ -99,9 +99,11 @@ def vote_presentation(presentation_id):
         return jsonify({'error': 'Already voted'}), 400
     
     # Add vote
+    username = data.get('username', 'Anonymous')
     vote = Vote(
         presentation_id=presentation_id,
-        user_identifier=user_identifier
+        user_identifier=user_identifier,
+        username=username
     )
     presentation.votes += 1
     
@@ -109,6 +111,35 @@ def vote_presentation(presentation_id):
     db.session.commit()
     
     return jsonify(presentation.to_dict()), 200
+
+# Delete user's own vote
+@voting_bp.route('/presentations/<int:presentation_id>/vote', methods=['DELETE'])
+def delete_vote(presentation_id):
+    data = request.json
+    user_identifier = data.get('user_identifier')
+    
+    if not user_identifier:
+        return jsonify({'error': 'user_identifier is required'}), 400
+    
+    presentation = Presentation.query.get(presentation_id)
+    if not presentation:
+        return jsonify({'error': 'Presentation not found'}), 404
+    
+    # Find user's vote
+    vote = Vote.query.filter_by(
+        presentation_id=presentation_id,
+        user_identifier=user_identifier
+    ).first()
+    
+    if not vote:
+        return jsonify({'error': 'Vote not found'}), 404
+    
+    # Delete vote and decrement count
+    db.session.delete(vote)
+    presentation.votes = max(0, presentation.votes - 1)  # Ensure non-negative
+    db.session.commit()
+    
+    return jsonify({'message': 'Vote deleted', 'presentation': presentation.to_dict()}), 200
 
 # Check if user has voted on a presentation
 @voting_bp.route('/presentations/<int:presentation_id>/has-voted', methods=['POST'])
@@ -188,6 +219,7 @@ def rate_presentation(presentation_id):
     db.session.commit()
     
     return jsonify(presentation.to_dict()), 200
+
 
 
 # Get user's rating for a presentation
@@ -289,3 +321,12 @@ def delete_week(week_id):
     db.session.commit()
     
     return jsonify({'message': 'Week deleted'}), 200
+
+
+# Get votes for a presentation (with usernames)
+@voting_bp.route('/presentations/<int:presentation_id>/votes', methods=['GET'])
+def get_presentation_votes(presentation_id):
+    votes = Vote.query.filter_by(presentation_id=presentation_id).order_by(Vote.voted_at.desc()).all()
+    return jsonify({
+        'votes': [vote.to_dict() for vote in votes]
+    })
