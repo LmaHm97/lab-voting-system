@@ -60,6 +60,7 @@ class Vote(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     presentation_id = db.Column(db.Integer, db.ForeignKey('presentations.id'), nullable=False)
     user_identifier = db.Column(db.String(100), nullable=False)  # Browser fingerprint or session ID
+    username = db.Column(db.String(100))  # Display name
     voted_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Ensure one vote per user per presentation
@@ -70,6 +71,7 @@ class Vote(db.Model):
             'id': self.id,
             'presentation_id': self.presentation_id,
             'user_identifier': self.user_identifier,
+            'username': self.username,
             'voted_at': self.voted_at.isoformat()
         }
 
@@ -113,4 +115,3 @@ class Comment(db.Model):
             'comment_text': self.comment_text,
             'created_at': self.created_at.isoformat()
         }
-
